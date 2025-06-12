@@ -1,0 +1,57 @@
+name: Security
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Run weekly
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Run Bandit
+      uses: PyCQA/bandit@master
+      with:
+        args: -r .
+
+    - name: Run Safety
+      uses: pyupio/safety@master
+      with:
+        api-key: ${{ secrets.SAFETY_API_KEY }}
+
+    - name: Run ShellCheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+        shellcheck scripts/*.sh
+        shellcheck tests/*.sh
+
+    - name: Check for secrets
+      uses: zricethezav/gitleaks@master
+      with:
+        config-path: .github/gitleaks.toml
+
+    - name: Run dependency scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+
+    - name: Run OWASP ZAP scan
+      uses: zaproxy/action-baseline@v0.4.0
+      with:
+        target: 'http://localhost:8080'
+
+    - name: Run TruffleHog
+      uses: trufflesecurity/trufflehog@master
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+        extra_args: --debug --only-verified 

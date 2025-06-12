@@ -1,0 +1,48 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shell: [bash, zsh]
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up ${{ matrix.shell }}
+      uses: shivammathur/setup-shell@v1
+      with:
+        shell: ${{ matrix.shell }}
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+
+    - name: Run shellcheck
+      run: |
+        shellcheck scripts/*.sh
+        shellcheck tests/*.sh
+
+    - name: Run tests
+      run: |
+        chmod +x tests/*.sh
+        for test in tests/*.sh; do
+          ${{ matrix.shell }} "$test"
+        done
+
+    - name: Check documentation
+      run: |
+        if [ -f docs/README.md ]; then
+          echo "Documentation exists"
+        else
+          echo "Documentation is missing"
+          exit 1
+        fi 

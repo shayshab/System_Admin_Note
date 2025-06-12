@@ -1,0 +1,76 @@
+# Configuration files
+config/config.sh
+*.conf
+*.config
+
+# Log files
+*.log
+logs/
+log/
+
+# Backup files
+*.bak
+*.backup
+backup/
+backups/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Sensitive information
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+*.p12
+*.pfx
+*.keystore
+*.jks
+
+# Script output
+*.out
+*.err
+*.pid
+
+# Directories
+node_modules/
+vendor/
+.env
+.venv
+venv/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+
+# Build output
+dist/
+build/
+*.o
+*.so
+*.a
+*.la
+*.lo
+*.def
+*.exp
+*.lib
+*.dll
+*.exe
+*.out
+*.app 
