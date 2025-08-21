@@ -90,10 +90,6 @@ devsecops/
 4. Run tests and security scans
 5. Submit a pull request
 
-## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-For support and questions, please open an issue in the repository or contact the DevSecOps team.
+Developed by
+KM Shayshab Azad
