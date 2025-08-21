@@ -1,0 +1,299 @@
+---
+- name: DevSecOps Infrastructure Deployment
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # Security configuration
+    security_level: "high"
+    compliance_frameworks: ["pci-dss", "soc2", "iso27001"]
+    
+    # Application configuration
+    app_name: "devsecops-app"
+    app_version: "1.0.0"
+    app_port: 8080
+    
+    # Monitoring configuration
+    enable_monitoring: true
+    enable_logging: true
+    enable_alerting: true
+    
+    # Backup configuration
+    backup_enabled: true
+    backup_retention_days: 30
+    
+  pre_tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+      
+    - name: Update package cache (RedHat)
+      yum:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+  
+  roles:
+    # Security hardening roles
+    - role: dev-sec.ssh-hardening
+      vars:
+        sshd_config:
+          PermitRootLogin: "no"
+          PasswordAuthentication: "no"
+          PubkeyAuthentication: "yes"
+          AllowUsers: "{{ ansible_user }}"
+    
+    - role: dev-sec.os-hardening
+      vars:
+        os_hardening:
+          system_environment:
+            umask: "027"
+          login_defs:
+            PASS_MAX_DAYS: 90
+            PASS_MIN_DAYS: 7
+            PASS_WARN_AGE: 7
+    
+    # Install and configure Docker
+    - role: geerlingguy.docker
+      vars:
+        docker_users:
+          - "{{ ansible_user }}"
+        docker_install_compose: true
+        docker_install_compose_version: "2.20.0"
+    
+    # Install and configure Nginx
+    - role: geerlingguy.nginx
+      vars:
+        nginx_http_template_enable: true
+        nginx_https_template_enable: true
+        nginx_ssl_protocols: "TLSv1.2 TLSv1.3"
+        nginx_ssl_ciphers: "ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384"
+    
+    # Install and configure MySQL
+    - role: geerlingguy.mysql
+      vars:
+        mysql_root_password: "{{ vault_mysql_root_password }}"
+        mysql_databases:
+          - name: "{{ app_name }}"
+            encoding: utf8mb4
+            collation: utf8mb4_unicode_ci
+        mysql_users:
+          - name: "{{ app_name }}_user"
+            password: "{{ vault_app_db_password }}"
+            priv: "{{ app_name }}.*:ALL"
+            host: "localhost"
+    
+    # Install monitoring tools
+    - role: prometheus.node_exporter
+      when: enable_monitoring
+      vars:
+        node_exporter_textfile_dir: "/var/lib/node_exporter/textfile_collector"
+    
+    # Install security scanning tools
+    - role: security.clamav
+      vars:
+        clamav_update_enabled: true
+        clamav_scan_enabled: true
+    
+    - role: security.auditd
+      vars:
+        auditd_rules:
+          - "-w /etc/passwd -p wa -k identity"
+          - "-w /etc/group -p wa -k identity"
+          - "-w /etc/shadow -p wa -k identity"
+          - "-w /etc/sudoers -p wa -k identity"
+          - "-w /var/log/auth.log -p wa -k authentication"
+    
+    - role: security.openscap
+      vars:
+        openscap_profile: "xccdf_org.ssgproject.content_profile_pci-dss"
+        openscap_scan_results: "/var/log/openscap-results.xml"
+  
+  tasks:
+    # Create application directories
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      loop:
+        - "/opt/{{ app_name }}"
+        - "/opt/{{ app_name }}/logs"
+        - "/opt/{{ app_name }}/config"
+        - "/opt/{{ app_name }}/backups"
+    
+    # Configure application
+    - name: Copy application configuration
+      template:
+        src: "templates/{{ app_name }}.conf.j2"
+        dest: "/opt/{{ app_name }}/config/{{ app_name }}.conf"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+      notify: restart application
+    
+    # Configure Nginx for application
+    - name: Configure Nginx for application
+      template:
+        src: "templates/nginx-app.conf.j2"
+        dest: "/etc/nginx/sites-available/{{ app_name }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload nginx
+    
+    - name: Enable Nginx site
+      file:
+        src: "/etc/nginx/sites-available/{{ app_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ app_name }}"
+        state: link
+      notify: reload nginx
+    
+    # Configure firewall
+    - name: Configure UFW firewall
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22"    # SSH
+        - "80"    # HTTP
+        - "443"   # HTTPS
+        - "{{ app_port }}"  # Application port
+    
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+    
+    # Configure fail2ban
+    - name: Configure fail2ban
+      template:
+        src: "templates/jail.local.j2"
+        dest: "/etc/fail2ban/jail.local"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart fail2ban
+    
+    # Configure log rotation
+    - name: Configure log rotation
+      template:
+        src: "templates/logrotate-app.j2"
+        dest: "/etc/logrotate.d/{{ app_name }}"
+        owner: root
+        group: root
+        mode: "0644"
+    
+    # Configure monitoring
+    - name: Configure monitoring
+      template:
+        src: "templates/monitoring.conf.j2"
+        dest: "/opt/{{ app_name }}/config/monitoring.conf"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+      when: enable_monitoring
+    
+    # Configure backup
+    - name: Configure backup script
+      template:
+        src: "templates/backup.sh.j2"
+        dest: "/opt/{{ app_name }}/backups/backup.sh"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      when: backup_enabled
+    
+    - name: Configure backup cron job
+      cron:
+        name: "Backup {{ app_name }}"
+        minute: "0"
+        hour: "2"
+        job: "/opt/{{ app_name }}/backups/backup.sh"
+        user: "{{ ansible_user }}"
+      when: backup_enabled
+    
+    # Run security compliance check
+    - name: Run OpenSCAP compliance scan
+      command: "oscap xccdf eval --profile {{ openscap_profile }} --results {{ openscap_scan_results }} /usr/share/xml/scap/ssg/content/ssg-{{ ansible_distribution }}-{{ ansible_distribution_major_version }}-ds.xml"
+      register: openscap_result
+      changed_when: false
+      when: openscap_profile is defined
+    
+    # Deploy application
+    - name: Deploy application
+      docker_compose:
+        project_src: "/opt/{{ app_name }}"
+        files:
+          - docker-compose.yml
+        state: present
+      notify: restart application
+    
+    # Health check
+    - name: Wait for application to be ready
+      uri:
+        url: "http://localhost:{{ app_port }}/health"
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 30
+      delay: 10
+    
+    # Final security check
+    - name: Final security verification
+      block:
+        - name: Check for open ports
+          shell: "netstat -tuln | grep LISTEN"
+          register: open_ports
+          changed_when: false
+        
+        - name: Check running services
+          shell: "systemctl list-units --type=service --state=running"
+          register: running_services
+          changed_when: false
+        
+        - name: Check file permissions
+          stat:
+            path: "/opt/{{ app_name }}/config"
+          register: config_permissions
+        
+        - name: Verify security configuration
+          assert:
+            that:
+              - config_permissions.stat.mode | int == 0o755
+              - "'fail2ban' in running_services.stdout"
+              - "'ufw' in running_services.stdout"
+            fail_msg: "Security configuration verification failed"
+  
+  handlers:
+    - name: restart application
+      docker_compose:
+        project_src: "/opt/{{ app_name }}"
+        files:
+          - docker-compose.yml
+        state: present
+    
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded
+    
+    - name: restart fail2ban
+      service:
+        name: fail2ban
+        state: restarted
+    
+    - name: restart monitoring
+      service:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - prometheus
+        - node_exporter
+        - grafana-server

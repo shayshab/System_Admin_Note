@@ -1,0 +1,64 @@
+---
+# Ansible Galaxy requirements for DevSecOps project
+
+# Core collections
+collections:
+  - name: ansible.posix
+    version: ">=1.4.0"
+  - name: ansible.utils
+    version: ">=2.8.0"
+  - name: community.docker
+    version: ">=3.0.0"
+  - name: community.aws
+    version: ">=4.0.0"
+  - name: community.general
+    version: ">=6.0.0"
+
+# Security and compliance roles
+roles:
+  - name: dev-sec.ssh-hardening
+    version: "v7.0.0"
+  - name: dev-sec.os-hardening
+    version: "v8.0.0"
+  - name: dev-sec.nginx-hardening
+    version: "v1.0.0"
+  - name: dev-sec.mysql-hardening
+    version: "v3.0.0"
+  - name: dev-sec.apache-hardening
+    version: "v1.0.0"
+  
+  # Monitoring and logging
+  - name: elastic.elasticsearch
+    version: "7.17.0"
+  - name: elastic.kibana
+    version: "7.17.0"
+  - name: prometheus.prometheus
+    version: "0.3.0"
+  - name: prometheus.node_exporter
+    version: "0.3.0"
+  
+  # Infrastructure roles
+  - name: geerlingguy.docker
+    version: "2.8.0"
+  - name: geerlingguy.kubernetes
+    version: "1.0.0"
+  - name: geerlingguy.nginx
+    version: "2.0.0"
+  - name: geerlingguy.mysql
+    version: "2.0.0"
+  
+  # Security scanning
+  - name: security.clamav
+    version: "1.0.0"
+  - name: security.auditd
+    version: "1.0.0"
+  - name: security.openscap
+    version: "1.0.0"
+  
+  # CI/CD roles
+  - name: geerlingguy.jenkins
+    version: "1.0.0"
+  - name: geerlingguy.gitlab
+    version: "1.0.0"
+  - name: geerlingguy.ansible
+    version: "1.0.0"

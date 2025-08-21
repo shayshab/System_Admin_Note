@@ -1,0 +1,333 @@
+version: '3.8'
+
+services:
+  # Application Stack
+  app:
+    build: .
+    image: devsecops/app:latest
+    container_name: devsecops-app
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    volumes:
+      - app-logs:/app/logs
+      - app-config:/app/config
+    depends_on:
+      - database
+      - redis
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Database
+  database:
+    image: mysql:8.0
+    container_name: devsecops-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: devsecops
+      MYSQL_USER: devsecops_user
+      MYSQL_PASSWORD: ${MYSQL_USER_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+      - db-config:/etc/mysql/conf.d
+      - db-logs:/var/log/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: devsecops-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: devsecops-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: devsecops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: devsecops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: devsecops-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  # Logging Stack
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: devsecops-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: devsecops-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    volumes:
+      - ./monitoring/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    depends_on:
+      - elasticsearch
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: devsecops-filebeat
+    user: root
+    volumes:
+      - ./monitoring/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/var/log/devsecops:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - elasticsearch
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  # Security Tools
+  owasp-zap:
+    image: owasp/zap2docker-stable:latest
+    container_name: devsecops-zap
+    ports:
+      - "8081:8080"
+    volumes:
+      - zap-data:/zap/wrk
+      - ./security/zap:/zap/config:ro
+    environment:
+      - ZAP_WEBSWING_OPTS=-port 8080 -host 0.0.0.0
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  trivy:
+    image: aquasec/trivy:latest
+    container_name: devsecops-trivy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - trivy-cache:/root/.cache
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  # CI/CD Tools
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: devsecops-jenkins
+    ports:
+      - "8082:8080"
+      - "50000:50000"
+    environment:
+      - JENKINS_OPTS=--httpPort=8080
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./ci-cd/jenkins:/var/jenkins_home/workspace:ro
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  sonarqube:
+    image: sonarqube:community
+    container_name: devsecops-sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  # Backup Service
+  backup:
+    image: alpine:latest
+    container_name: devsecops-backup
+    volumes:
+      - ./backup:/backup:ro
+      - backup-storage:/backup-storage
+    environment:
+      - BACKUP_SCHEDULE=0 1 * * *
+      - BACKUP_RETENTION_DAYS=30
+    command: >
+      sh -c "
+        apk add --no-cache curl mysql-client &&
+        chmod +x /backup/backup.sh &&
+        /backup/backup.sh
+      "
+    depends_on:
+      - database
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  # Security Monitoring
+  falco:
+    image: falcosecurity/falco:latest
+    container_name: devsecops-falco
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock:ro
+      - /dev:/host/dev:ro
+      - /proc:/host/proc:ro
+      - /boot:/host/boot:ro
+      - /lib/modules:/host/lib/modules:ro
+      - /usr:/host/usr:ro
+      - /etc:/host/etc:ro
+      - ./security/falco:/etc/falco:ro
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+  # Compliance Scanner
+  openscap:
+    image: openscap/openscap:latest
+    container_name: devsecops-openscap
+    volumes:
+      - /etc:/host/etc:ro
+      - /var:/host/var:ro
+      - /usr:/host/usr:ro
+      - ./security/openscap:/openscap:ro
+    networks:
+      - devsecops-network
+    restart: unless-stopped
+
+volumes:
+  app-logs:
+  app-config:
+  db-data:
+  db-config:
+  db-logs:
+  redis-data:
+  nginx-logs:
+  prometheus-data:
+  grafana-data:
+  elasticsearch-data:
+  zap-data:
+  trivy-cache:
+  jenkins-data:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:
+  backup-storage:
+
+networks:
+  devsecops-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

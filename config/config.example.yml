@@ -1,0 +1,250 @@
+# DevSecOps Configuration Example
+# Copy this file to config.yml and modify as needed
+
+# Security Configuration
+security:
+  # Vulnerability scanning
+  vulners_api_key: "${VULNERS_API_KEY}"  # Set via environment variable
+  scan_targets:
+    - "localhost"
+    - "staging-server.company.com"
+    - "production-server.company.com"
+  
+  # Compliance frameworks
+  compliance_frameworks:
+    - "pci-dss"
+    - "soc2"
+    - "iso27001"
+  
+  # Security thresholds
+  severity_threshold: "MEDIUM"  # LOW, MEDIUM, HIGH, CRITICAL
+  max_high_vulnerabilities: 0
+  max_medium_vulnerabilities: 5
+  
+  # Exclude patterns for scanning
+  exclude_patterns:
+    - "*.tmp"
+    - "*.log"
+    - "node_modules"
+    - ".git"
+    - "vendor"
+
+# Infrastructure Configuration
+infrastructure:
+  # AWS Configuration
+  aws:
+    region: "us-east-1"
+    vpc_id: "vpc-12345678"
+    subnet_ids:
+      - "subnet-12345678"
+      - "subnet-87654321"
+    security_groups:
+      - "sg-12345678"
+      - "sg-87654321"
+  
+  # Server configurations
+  servers:
+    web_servers:
+      count: 2
+      instance_type: "t3.micro"
+      ami: "ami-12345678"
+      tags:
+        Name: "web-server"
+        Environment: "production"
+        Role: "web"
+    
+    app_servers:
+      count: 2
+      instance_type: "t3.small"
+      ami: "ami-12345678"
+      tags:
+        Name: "app-server"
+        Environment: "production"
+        Role: "application"
+    
+    database_servers:
+      count: 1
+      instance_type: "t3.medium"
+      ami: "ami-12345678"
+      tags:
+        Name: "db-server"
+        Environment: "production"
+        Role: "database"
+  
+  # Deployment configuration
+  deployment:
+    strategy: "rolling"  # rolling, blue_green, simple
+    health_check_path: "/health"
+    rollback_threshold: 3
+    deployment_timeout: 1800  # 30 minutes
+  
+  # SSH Configuration
+  ssh:
+    username: "ubuntu"
+    key_path: "~/.ssh/id_rsa"
+    timeout: 30
+
+# CI/CD Configuration
+ci_cd:
+  # Jenkins Configuration
+  jenkins:
+    url: "http://jenkins.company.com"
+    credentials_id: "jenkins-credentials"
+    pipeline_name: "devsecops-pipeline"
+  
+  # Docker Configuration
+  docker:
+    registry: "registry.company.com"
+    namespace: "devsecops"
+    credentials_id: "docker-registry"
+  
+  # Notification Configuration
+  notifications:
+    slack:
+      channel: "#devsecops-alerts"
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+    email:
+      recipients:
+        - "devsecops-team@company.com"
+        - "security-team@company.com"
+    teams:
+      webhook_url: "${TEAMS_WEBHOOK_URL}"
+
+# Monitoring Configuration
+monitoring:
+  # Prometheus Configuration
+  prometheus:
+    url: "http://prometheus.company.com:9090"
+    retention_days: 30
+  
+  # Grafana Configuration
+  grafana:
+    url: "http://grafana.company.com:3000"
+    api_key: "${GRAFANA_API_KEY}"
+  
+  # Elasticsearch Configuration
+  elasticsearch:
+    url: "http://elasticsearch.company.com:9200"
+    username: "${ELASTIC_USERNAME}"
+    password: "${ELASTIC_PASSWORD}"
+  
+  # Alerting Configuration
+  alerting:
+    enabled: true
+    slack_channel: "#devsecops-alerts"
+    email_enabled: true
+    pagerduty_enabled: false
+
+# Compliance Configuration
+compliance:
+  # PCI DSS Configuration
+  pci_dss:
+    enabled: true
+    scan_schedule: "0 2 * * *"  # Daily at 2 AM
+    report_retention_days: 90
+  
+  # SOC 2 Configuration
+  soc2:
+    enabled: true
+    scan_schedule: "0 3 * * *"  # Daily at 3 AM
+    report_retention_days: 90
+  
+  # ISO 27001 Configuration
+  iso27001:
+    enabled: true
+    scan_schedule: "0 4 * * *"  # Daily at 4 AM
+    report_retention_days: 90
+
+# Backup Configuration
+backup:
+  enabled: true
+  retention_days: 30
+  schedule: "0 1 * * *"  # Daily at 1 AM
+  storage:
+    type: "s3"  # s3, local, nfs
+    bucket: "devsecops-backups"
+    path: "/backups"
+  
+  # Database backup
+  database:
+    enabled: true
+    include_logs: true
+    compression: true
+  
+  # Configuration backup
+  configuration:
+    enabled: true
+    include_secrets: false
+    encryption: true
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "json"
+  output: "file"  # file, syslog, elasticsearch
+  
+  # File logging
+  file:
+    path: "/var/log/devsecops"
+    max_size: "100MB"
+    backup_count: 5
+  
+  # Elasticsearch logging
+  elasticsearch:
+    enabled: false
+    index_pattern: "devsecops-logs-%Y.%m.%d"
+
+# Testing Configuration
+testing:
+  # Unit tests
+  unit:
+    enabled: true
+    coverage_threshold: 80
+  
+  # Integration tests
+  integration:
+    enabled: true
+    timeout: 300
+  
+  # Security tests
+  security:
+    enabled: true
+    tools:
+      - "bandit"
+      - "semgrep"
+      - "trivy"
+      - "owasp-zap"
+  
+  # Performance tests
+  performance:
+    enabled: true
+    load_test_duration: 300
+    max_response_time: 2000  # milliseconds
+
+# Environment-specific overrides
+environments:
+  development:
+    security:
+      severity_threshold: "LOW"
+      max_high_vulnerabilities: 2
+    monitoring:
+      alerting:
+        enabled: false
+  
+  staging:
+    security:
+      severity_threshold: "MEDIUM"
+      max_high_vulnerabilities: 1
+    monitoring:
+      alerting:
+        enabled: true
+  
+  production:
+    security:
+      severity_threshold: "HIGH"
+      max_high_vulnerabilities: 0
+    monitoring:
+      alerting:
+        enabled: true
+    backup:
+      retention_days: 90
